@@ -1,10 +1,26 @@
 #include <cuda_runtime.h>
 
+#define BLOCK_SIZE 256
+#define WARP_SIZE 32
+
+
+// lane:  0   1   2   3   4   5   6   7 ...
+// val:   a   b   c   d   e   f   g   h ...
+// We need: result:
+// 0: a
+// 1: a + b
+// 2: a + b + c
+// 3: a + b + c + d
+// 1 → 2 → 4 → 8 → 16 - offset
 __device__ __forceinline__ float warp_scan(float val)
 {
-    // Inclusive scan inside warp
+    // Делаем inclusive scan внутри warp (32 потока)
+    // Каждый поток накапливает сумму всех значений "слева" от него
     for (int offset = 1; offset < WARP_SIZE; offset <<= 1) {
+        // Берём значение из потока с индексом (lane - offset)
         float n = __shfl_up_sync(0xffffffff, val, offset);
+
+        // Если мы не самый левый — прибавляем
         if (threadIdx.x % WARP_SIZE >= offset)
             val += n;
     }
@@ -66,8 +82,6 @@ __global__ void add_block_offsets(float* output, const float* blockOffsets, int 
 
 extern "C" void solve(const float* input, float* output, int N)
 {
-    const int BLOCK_SIZE 256;
-    const int WARP_SIZE 32
     int numBlocks = (N + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
     float* d_blockSums = nullptr;
